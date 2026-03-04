@@ -3,6 +3,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+# recursive architecture, global droppath + local droppath + dropout
+
 
 def mask_local_drop(n, p):
     drops = np.random.binomial(1, p, size=[n]).astype(bool)
@@ -53,10 +55,7 @@ class FractalBlock(nn.Module):  # x -> [y1, y2, ...]
             self.block1 = None
             self.block2 = None
 
-    def forward(self, x, only_col=None):  # 어떤 리스트를 반환해야 함
-        # 1. FractalBlock에 처음 들어올때의 입력은 x를 (이전 결과를 join했거나 어쨌든 1개) 리스트
-        # forward 결과는 각 path를 통한 리스트
-        # 별로 join 연산은 따로 해야함
+    def forward(self, x, only_col=None):
         ys = []
         if only_col is None:
             if self.n_cols > 1:
