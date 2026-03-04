@@ -9,6 +9,7 @@ inputsize = {
     "preactresnet110": 32,
     "densenetbc100": 32,
     "fractalnet40": 32,
+    "fractalnet": 32,
 }
 
 step = 0
