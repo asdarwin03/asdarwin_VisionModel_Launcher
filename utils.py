@@ -10,6 +10,9 @@ inputsize = {
     "densenetbc100": 32,
     "fractalnet40": 32,
     "fractalnet": 32,
+    "visiontransformer": 224,
+    "mlpmixer": 224,
+    "convmixer": 224,
 }
 
 step = 0
