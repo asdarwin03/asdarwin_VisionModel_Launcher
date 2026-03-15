@@ -3,34 +3,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-inputsize = {
-    "alexnet": 227,
-    "resnet20": 32,
-    "preactresnet110": 32,
-    "densenetbc100": 32,
-    "fractalnet40": 32,
-    "fractalnet": 32,
-    "visiontransformer": 224,
-    "mlpmixer": 224,
-    "convmixer": 224,
-}
-
+BATCH_TRACK_TIME = 10
 step = 0
-BATCH_TRACK_TIME=10
 
-def getDefaultTransforms(model_name):
-    train_transforms = transforms.Compose([
-        transforms.RandomResizedCrop(inputsize[model_name]),
-        transforms.RandomHorizontalFlip(),
-    ])
-    test_transforms = transforms.Compose([
-        transforms.Resize((inputsize[model_name], inputsize[model_name])),
-    ])
-    return train_transforms, test_transforms
-
-
-def train(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, writer):
+def train(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, logger=None):
     global step
+    writer = logger.writer
     size = len(dataloader.dataset)
     batches = len(dataloader)
     model.train()
@@ -63,7 +41,7 @@ def train(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, w
             current = (batch + 1) * len(X)
             avg_loss = running_loss / BATCH_TRACK_TIME
             avg_acc = running_correct / running_total
-            print(f"avg loss: {avg_loss:>7f} [{current:>5d}/{size:>5d}]")
+            logger.print(f"avg loss: {avg_loss:>7f} [{current:>5d}/{size:>5d}]")
 
             """
             writer.add_scalar("train/loss", avg_loss, step)
@@ -73,7 +51,7 @@ def train(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, w
             running_correct = 0
             running_total = 0
         step += 1
-    print(batches)
+    logger.print(batches)
     total_loss /= batches
     total_correct /= size
     writer.add_scalar("train/loss", total_loss, cur_epoch)
@@ -81,9 +59,10 @@ def train(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, w
     return total_correct, total_loss
 
 
-def test(dataloader, model, loss_fn, device, cur_epoch, writer):
+def test(dataloader, model, loss_fn, device, cur_epoch, logger=None):
     size = len(dataloader.dataset)
     batches = len(dataloader)
+    writer = logger.writer
     model.eval()
     test_loss, correct = 0.0, 0
     total = 0

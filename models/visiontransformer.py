@@ -3,7 +3,7 @@ from torch import nn
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, D=16*16*3, num_heads=12, dropout=0.1):  # embed_size : (P^2 dot C, P=16, C=3)
+    def __init__(self, D=16*16*3, num_heads=12, dropout=0.0):  # embed_size : (P^2 dot C, P=16, C=3)
         super().__init__()
         self.ln1 = nn.LayerNorm(D)  # for length-variable inputs
         self.attention = nn.MultiheadAttention(embed_dim=D, num_heads=num_heads, dropout=dropout, batch_first=True)
@@ -22,7 +22,7 @@ class TransformerEncoder(nn.Module):
         return x
 
 class visiontransformer(nn.Module):
-    def __init__(self, num_classes=10, c_in=3, num_encoders=12, embed_size=16*16*3, img_size=(224, 224), patch_size=16, num_heads=12):
+    def __init__(self, num_classes=10, c_in=3, num_encoders=5, embed_size=16*16*3, img_size=(224, 224), patch_size=16, num_heads=4):
         super().__init__()
         self.P = patch_size  # patch size(16)
         self.L = num_encoders  # number of encoders

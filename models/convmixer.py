@@ -36,7 +36,7 @@ class convmixer(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # x : (B, C, H, W)
-        x = self.bn(self.gelu(self.conv(x)))
+        x = self.bn(self.gelu(self.conv(x)))  # (B, D, H/P, W/P)
         for mixerlayer in self.mixerlayers:
             x = mixerlayer(x)
         x = self.fc(self.flatten(self.pool(x)))

@@ -4,11 +4,11 @@ import models, datasets
 from torch.utils.data import DataLoader
 from torch import nn
 from torch import optim
-from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import MultiStepLR
 import time
 import os
 import utils
+import logger
 
 # python main.py --model resnet20 --dataset cifar10 [[--method rotnet]] --logdir logs/{dataset}_{model_name} --adaptive_LR [50%, 75%, ...] or "just basic" --epoch () --batch_size
 # hyper_parameters:
@@ -22,26 +22,31 @@ import utils
 
 # python main.py
 
-BATCH_TRACK_TIME = 10
+IMG_SIZE = {
+    "alexnet": 227,
+    "resnet20": 32,
+    "preactresnet110": 32,
+    "densenetbc100": 32,
+    "fractalnet40": 32,
+    "fractalnet": 32,
+    "visiontransformer": 224,
+    "mlpmixer": 224,
+    "convmixer": 224,
+}
+
 
 def launch(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(device)
-    print(args)
     # args.model = "resnet20"
     # args.dataset = "cifar10"
 
     model_class = getattr(models, args.model)
-    dataset_class = getattr(datasets, args.dataset)
-    train_transforms, test_transforms = utils.getDefaultTransforms(model_name=args.model)
+    trainset, testset, num_classes = datasets.load_dataset(name=args.dataset, img_size=(IMG_SIZE[args.model], IMG_SIZE[args.model]))
 
-    custom_mean, custom_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)  # modify if you want. if you don't want to use custom mean/std, set to "auto".
+    trainloader = DataLoader(dataset=trainset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    testloader = DataLoader(dataset=testset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    dataset = dataset_class(train_transform=train_transforms, test_transform=test_transforms, mean=custom_mean, std=custom_std)
-    trainloader = DataLoader(dataset=dataset.getTrainSet(), batch_size=args.batch_size, shuffle=True, num_workers=0)
-    testloader = DataLoader(dataset=dataset.getTestSet(), batch_size=args.batch_size, shuffle=False, num_workers=0)
-
-    model = model_class(num_classes=dataset.getNumClasses())
+    model = model_class(num_classes=num_classes)
     run_name = f"{args.model}_{args.dataset}_{time.strftime('%Y%m%d-%H%M%S')}"
 
     if args.logdir == "":
@@ -49,12 +54,14 @@ def launch(args):
     else:
         logdir = args.logdir
 
-    os.makedirs(logdir, exist_ok=True)
-    writer = SummaryWriter(log_dir=logdir)
-    print("tensorboard name: " + f"{run_name}")
+    log = logger.Logger(logdir)
+    writer = log.writer
 
-    print(model)
-    print(f"total num of classes: {dataset.getNumClasses()}")
+    log.print(device)
+    log.print(args)
+    log.print("tensorboard name: " + f"{run_name}")
+    log.print(model)
+    log.print(f"total num of classes: {num_classes}")
 
     model.to(device)
 
@@ -66,19 +73,19 @@ def launch(args):
 
     # adaptive learning rate is automatically applied. (50%, 75%)
     scheduler = MultiStepLR(optimizer, milestones=[num_batches*num_epochs*2/4, num_batches*num_epochs*3/4], gamma=0.1)
-    print(num_batches*num_epochs*2/4, num_batches*num_epochs*3/4)
+    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs*2/4}, {num_epochs*3/4}")
 
     for epoch in range(num_epochs):
-        print(f"Epoch {epoch + 1}\n--------------------------")
-        train_acc, train_loss = utils.train(dataloader=trainloader, model=model, loss_fn=loss_fn, optimizer=optimizer, device=device, scheduler=scheduler, cur_epoch=epoch, writer=writer)
+        log.print(f"Epoch {epoch + 1}\n--------------------------")
+        train_acc, train_loss = utils.train(dataloader=trainloader, model=model, loss_fn=loss_fn, optimizer=optimizer, device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
 
-        print(f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] Train Accuracy: {(100 * train_acc):>0.1f}%, Train Avg loss: {train_loss:>8f}")
-        test_acc, test_loss = utils.test(dataloader=testloader, model=model, loss_fn=loss_fn, device=device, cur_epoch=epoch, writer=writer)
-        print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%, Test Avg loss: {test_loss:>8f}\n")
-    print("Train is now completed.")
+        log.print(f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] Train Accuracy: {(100 * train_acc):>0.1f}%, Train Avg loss: {train_loss:>8f}")
+        test_acc, test_loss = utils.test(dataloader=testloader, model=model, loss_fn=loss_fn, device=device, cur_epoch=epoch, logger=log)
+        log.print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%, Test Avg loss: {test_loss:>8f}\n")
+    log.print("Train is now completed.")
     torch.save(model.state_dict(), run_name + ".pth")
     writer.close()
-    print("Saved Model State to " + run_name + ".pth")
+    log.print("Saved Model State to " + run_name + ".pth")
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -93,7 +100,6 @@ if __name__ == "__main__":
     # test_only?
 
     args = parser.parse_args()
-    print(args)
     if args.model == None or args.dataset == None:
         print("model, and dataset is necessary field.")
         exit(0)
