@@ -2,9 +2,12 @@ from torch import nn
 import torchvision.transforms as transforms
 
 
-class alexnet(nn.Module):
-    def __init__(self, num_classes=10):
+class AlexNet(nn.Module):
+    def __init__(self, num_classes=10, net_config=None):
         super().__init__()
+        self.mode = "Supervised"
+        if net_config is not None:
+            self.mode = net_config['mode'] # Supervised or Self-Supervised
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(3, 2)
         self.conv1 = nn.Conv2d(3, 96, 11, 4, 0)
@@ -29,6 +32,10 @@ class alexnet(nn.Module):
         x = self.relu(self.bn3(self.conv3(x)))
         x = self.relu(self.bn4(self.conv4(x)))
         x = self.pool(self.relu(self.bn5(self.conv5(x))))
+
+        if self.mode == "Self-Supervised":
+            return x
+        
         x = self.flatten(x)
         x = self.relu(self.fc1(x))
         x = self.dropout(x)

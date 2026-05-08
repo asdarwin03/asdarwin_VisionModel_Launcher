@@ -20,7 +20,7 @@ class MixerLayer(nn.Module):
         return x
 
 
-class convmixer(nn.Module):
+class ConvMixer(nn.Module):
     def __init__(self, num_classes=10, c_in=3, dim=256, depth=12, patch_size=7, kernel_size=9):
         super().__init__()
 

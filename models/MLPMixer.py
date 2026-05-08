@@ -47,7 +47,7 @@ class MixerLayer(nn.Module):
         return x
 
 
-class mlpmixer(nn.Module):
+class MLPMixer(nn.Module):
     def __init__(self, num_classes=10, img_size=(224, 224), num_mixerlayers=8, patch_size=16, C=512, c_in=3):
         super().__init__()
         self.num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)

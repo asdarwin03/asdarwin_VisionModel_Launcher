@@ -1,0 +1,35 @@
+{
+    "run_name": "ViT_TrainTest",
+    "run_mode": "TrainAndTest",
+    "model": "VisionTransformer",
+
+    "train_type": "Supervised",
+    "train_dataset_name": "cifar10",
+    "train_dataset_path": "C:\\Users\\최은규\\Desktop\\ELLab\\asdarwin_visionmodel_launcher\\data",
+    "test_dataset_name": "cifar10",
+    "test_dataset_path": "C:\\Users\\최은규\\Desktop\\ELLab\\asdarwin_visionmodel_launcher\\data",
+
+    
+    "train": {
+        "loss_function": "CrossEntropyLoss",
+        "optimizer": "SGD",
+        "learning_rate": 0.1,
+        "epochs": 1,
+        "batch_size": 256,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+
+        "net_config": {
+            "num_encoders": 2,
+            "embed_size": 768,
+            "img_size": [224, 224],
+            "patch_size": 16,
+            "num_heads": 4,
+            "p_dropout": 0.0
+        }
+    },
+
+    "use_tensorboard": true,
+    "log_save_path": "C:\\logs",
+    "model_save_path": "C:\\Users\\최은규\\Desktop\\ELLab\\pths"
+}

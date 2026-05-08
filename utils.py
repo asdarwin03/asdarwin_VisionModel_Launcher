@@ -59,6 +59,62 @@ def train(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, l
     return total_correct, total_loss
 
 
+def pretrain(dataloader, model, loss_fn, optimizer, device, scheduler, cur_epoch, logger=None):
+    global step
+    writer = logger.writer
+    size = len(dataloader.dataset)
+    batches = len(dataloader)
+    model.train()
+    total_loss = 0.0
+    total_correct = 0
+    running_loss = 0.0
+    running_correct = 0
+    running_total = 0
+
+    total_seen = 0
+
+    for batch, (X, _) in enumerate(dataloader):
+        X = X.to(device) # for self-supervised learning
+        optimizer.zero_grad()
+        pred, y = model(X) # for self-supervised learning
+        loss = loss_fn(pred, y)
+        loss.backward()
+        optimizer.step()
+
+        scheduler.step()
+        
+        correct = (pred.argmax(dim=1) == y).sum().item()
+        total = y.size(0)
+
+        running_loss += loss.item()
+        total_loss += loss.item()
+        running_correct += correct
+        total_correct += correct
+        total_seen += total
+        running_total += total
+
+        if (batch + 1) % BATCH_TRACK_TIME == 0:
+            current = (batch + 1) * len(X)
+            avg_loss = running_loss / BATCH_TRACK_TIME
+            avg_acc = running_correct / running_total
+            logger.print(f"avg loss: {avg_loss:>7f} [{current:>5d}/{size:>5d}]")
+
+            """
+            writer.add_scalar("train/loss", avg_loss, step)
+            writer.add_scalar("train/acc", avg_acc, step)
+            """
+            running_loss = 0.0
+            running_correct = 0
+            running_total = 0
+        step += 1
+    logger.print(batches)
+    total_loss /= batches
+    total_correct /= total_seen
+    writer.add_scalar("pretrain/loss", total_loss, cur_epoch)
+    writer.add_scalar("pretrain/acc", total_correct, cur_epoch)
+    return total_correct, total_loss
+
+
 def test(dataloader, model, loss_fn, device, cur_epoch, logger=None):
     size = len(dataloader.dataset)
     batches = len(dataloader)

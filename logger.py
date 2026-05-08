@@ -12,7 +12,7 @@ class Logger(object):
         handlers = [logging.StreamHandler(sys.stdout)]
         if logdir is not None:
             if resume is None:
-                os.makedirs(logdir)
+                os.makedirs(logdir, exist_ok=True)
             handlers.append(logging.FileHandler(os.path.join(logdir, 'log.txt')))
             self.writer = SummaryWriter(log_dir=logdir)
         else:

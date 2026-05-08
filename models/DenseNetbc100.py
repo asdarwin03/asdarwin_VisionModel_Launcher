@@ -58,7 +58,7 @@ class TransitionLayer(nn.Module):
         x = self.avgpool(x)
         return x
 
-class densenetbc100(nn.Module):
+class DenseNetbc100(nn.Module):
     def __init__(self, k=12, total_layers=100, theta=0.5, num_classes=10):
         super().__init__()
         self.first_conv = nn.Conv2d(in_channels=3, out_channels=2*k, kernel_size=3, stride=1, padding=1, bias=False)

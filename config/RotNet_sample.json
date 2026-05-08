@@ -1,0 +1,58 @@
+{
+    "run_name": "RotNet_Classification_sample",
+    "run_mode": "PreTrainAndFineTuneAndTest",
+    "model": "RotNet",
+
+    "train_type": "Self-Supervised",
+    "pretrain_dataset_name": "cifar10",
+    "pretrain_dataset_path": "path3",
+
+    "finetune_dataset_name": "cifar10",
+    "finetune_dataset_path": "path4",
+
+    "test_dataset_name": "cifar10",
+    "test_dataset_path": "path5",
+
+    
+    "pretrain": {
+        "loss_function": "CrossEntropyLoss",
+        "optimizer": "SGD",
+        "learning_rate": 0.1,
+        "epochs": 20,
+        "batch_size": 256,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+
+        "net_config": {
+            "c_in": 3,
+            "feature_dim": 256,
+
+            "encoder_model": "AlexNet",
+            "encoder_config": {
+                "mode": "Self-Supervised"
+            },
+
+            "head_config": {
+                "finetune_type": "Linear",
+                "head": "Linear",
+                "num_classes": 10
+            }
+        }
+    },
+
+
+    "finetune": {
+        "loss_function": "CrossEntropyLoss",
+        "optimizer": "SGD",
+        "learning_rate": 0.01,
+        "epochs": 10,
+        "batch_size": 256,
+        "weight_decay": 0.0001,
+        "momentum": 0.9
+        
+    },
+
+    "use_tensorboard": true,
+    "log_save_path": "path",
+    "model_save_path": "path2"
+}

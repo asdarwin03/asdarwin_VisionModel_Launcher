@@ -122,7 +122,7 @@ class FractalBlock(nn.Module):
                 return self.forward_local(x)
 
 
-class fractalnet40(nn.Module):
+class FractalNet40(nn.Module):
     def __init__(self, input_size=32, num_classes=10, c_in=3, n_cols=4, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0, doubling=False, consist_gdrop=False):
         super().__init__()
         self.B = len(channels)  # num of blocks

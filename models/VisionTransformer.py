@@ -21,21 +21,31 @@ class TransformerEncoder(nn.Module):
         x = x + self.mlp(self.ln2(x))
         return x
 
-class visiontransformer(nn.Module):
-    def __init__(self, num_classes=10, c_in=3, num_encoders=5, embed_size=16*16*3, img_size=(224, 224), patch_size=16, num_heads=4):
+class VisionTransformer(nn.Module):
+    def __init__(self, num_classes=10, net_config=None, c_in=3, num_encoders=5, embed_size=16*16*3, img_size=[224, 224], patch_size=16, num_heads=4, p_dropout=0.0):
         super().__init__()
+
+        if net_config is not None:
+            num_encoders = net_config['num_encoders']
+            embed_size = net_config['embed_size']
+            img_size = net_config['img_size']
+            patch_size = net_config['patch_size']
+            num_heads = net_config['num_heads']
+            p_dropout = net_config['p_dropout']
+
         self.P = patch_size  # patch size(16)
         self.L = num_encoders  # number of encoders
         self.N = (img_size[0] // patch_size) * (img_size[1] // patch_size)  # number of tokens = H*W / PP
         self.C = c_in
         self.D = embed_size
+
         self.class_token = nn.Parameter(torch.randn(1, 1, self.D), requires_grad=True)
 
         self.patch_embedding = nn.Linear(self.C*(self.P**2), self.D)
         self.position_embedding = nn.Parameter(torch.randn(1, 1+self.N, self.D), requires_grad=True)
 
         self.encoders = nn.ModuleList([
-            TransformerEncoder(D=self.D, num_heads=num_heads) for _ in range(self.L)
+            TransformerEncoder(D=self.D, num_heads=num_heads, dropout=p_dropout) for _ in range(self.L)
         ])
 
         self.mlp_head = nn.Sequential(

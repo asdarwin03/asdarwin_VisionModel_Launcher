@@ -22,7 +22,7 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class resnet20(nn.Module):
+class ResNet20(nn.Module):
     def __init__(self, num_classes=10):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)

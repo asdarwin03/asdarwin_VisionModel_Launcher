@@ -21,7 +21,7 @@ class PreActBasicBlock(nn.Module):
         return out
 
 
-class preactresnet110(nn.Module):
+class PreActResNet110(nn.Module):
     def __init__(self, num_classes=10):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False)

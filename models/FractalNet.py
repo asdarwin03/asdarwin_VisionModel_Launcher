@@ -68,18 +68,25 @@ class FractalBlock(nn.Module):  # x -> [y1, y2, ...]
         return ys
 
 
-class fractalnet(nn.Module):
-    def __init__(self, input_size=32, num_classes=10, c_in=3, n_cols=4, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0):
+class FractalNet(nn.Module):
+    def __init__(self, input_size=32, net_config=None, num_classes=10, c_in=3, n_cols=4, num_blocks=5, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0):
         super().__init__()
-        self.B = len(channels)  # num of blocks
+        if net_config is not None:
+            n_cols = net_config['columns']
+            channels = net_config['channels']
+            p_dropouts = net_config['p_dropouts']
+            p_local_drop = net_config['p_local_drop']
+            p_global_drop = net_config['p_global_drop']
+            num_blocks = net_config['num_blocks']
+
+        self.blocks = nn.ModuleList()
+        self.pools = nn.ModuleList()
+        self.B = num_blocks  # num of blocks
         self.p_dropouts = p_dropouts
         self.p_local_drop = p_local_drop
         self.p_global_drop = p_global_drop
         self.n_cols = n_cols
         size = input_size
-
-        self.blocks = nn.ModuleList()
-        self.pools = nn.ModuleList()
 
         c_out = c_in
         # self, n_cols, c_in, c_out, p_dropout, p_local_drop, p_global_drop):
