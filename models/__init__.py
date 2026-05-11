@@ -8,3 +8,4 @@ from .VisionTransformer import VisionTransformer
 from .MLPMixer import MLPMixer
 from .ConvMixer import ConvMixer
 from .RotNet import RotNet
+from .SimCLR import SimCLR

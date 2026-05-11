@@ -1,0 +1,43 @@
+{
+    "run_name": "SimCLR_kNN_sample",
+    "run_mode": "SimCLR",
+    "model": "SimCLR",
+
+    "train_type": "Self-Supervised",
+    "train_dataset_name": "cifar10",
+    "train_dataset_path": "path3",
+
+    "test_dataset_name": "cifar10",
+    "test_dataset_path": "path5",
+
+    
+    "train": {
+        "loss_function": "NT-XentLoss",
+        "optimizer": "SGD",
+        "learning_rate": 0.1,
+        "epochs": 10,
+        "batch_size": 256,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+
+        "net_config": {
+            "c_in": 3,
+            "feature_dim": 256,
+
+            "encoder_model": "ResNet20",
+            "encoder_config": {
+                "mode": "Self-Supervised",
+                "num_classes": 256
+            }
+        }
+    },
+
+    "evaluation": "kNN",
+    "evaluation_config": {
+        "k": 5
+    },
+
+    "use_tensorboard": true,
+    "log_save_path": "path",
+    "model_save_path": "path2"
+}
