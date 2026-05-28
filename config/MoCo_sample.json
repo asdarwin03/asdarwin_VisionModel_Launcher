@@ -1,25 +1,24 @@
 {
-  "method": "RotNet",
+  "method": "MoCo",
   "model": "ResNet20",
-
-  "run_name": "RotNet_kNN_sample",
+  "run_name": "MoCo_kNN_sample",
   "train_dataset_name": "cifar10",
   "train_dataset_path": "C:\\Users\\최은규\\Desktop\\ELLab\\asdarwin_visionmodel_launcher\\data",
-    "test_dataset_name": "cifar10",
+  "test_dataset_name": "cifar10",
   "test_dataset_path": "C:\\Users\\최은규\\Desktop\\ELLab\\asdarwin_visionmodel_launcher\\data",
   "encoder_dim_out": 128,
-  
   "train": {
     "learning_rate": 0.1,
     "epochs": 10,
     "batch_size": 256,
     "weight_decay": 0.0001,
-    "momentum": 0.9
+    "momentum": 0.9,
+    "temperature": 0.5,
+    "moco_momentum": 0.999,
+    "queue_size": 4096
   },
   "evaluation": "kNN",
-  "evaluation_config": {
-    "k": 5
-  },
+  "evaluation_config": { "k": 5 },
   "log_save_path": "C:\\logs",
   "model_save_path": "C:\\Users\\최은규\\Desktop\\ELLab\\pths"
 }

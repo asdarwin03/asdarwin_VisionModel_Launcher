@@ -4,6 +4,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from encoder import Encoder
+
 # init lr = 0.1, /10 at 50% and 75% of the total number of training epochs
 # batchsize=64 for 300 and 40 epochs
 # weight_decay = 10e-4 = 0.0001
@@ -58,9 +60,9 @@ class TransitionLayer(nn.Module):
         x = self.avgpool(x)
         return x
 
-class DenseNetbc100(nn.Module):
-    def __init__(self, k=12, total_layers=100, theta=0.5, num_classes=10):
-        super().__init__()
+class DenseNetbc100(Encoder):
+    def __init__(self, dim_out=256, k=12, total_layers=100, theta=0.5):
+        super().__init__(dim_out=dim_out)
         self.first_conv = nn.Conv2d(in_channels=3, out_channels=2*k, kernel_size=3, stride=1, padding=1, bias=False)
         num_layers = (total_layers-4)//6
         k0=2*k
@@ -79,7 +81,7 @@ class DenseNetbc100(nn.Module):
         m = k0 + num_layers*k
         self.bn = nn.BatchNorm2d(m)
         self.globalavgpool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Linear(m, num_classes)
+        self.fc = nn.Linear(m, dim_out)
 
 
 

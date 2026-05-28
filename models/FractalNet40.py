@@ -5,6 +5,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from encoder import Encoder
 # FractalNet40이면 B=5, C=4
 
 
@@ -122,9 +123,9 @@ class FractalBlock(nn.Module):
                 return self.forward_local(x)
 
 
-class FractalNet40(nn.Module):
-    def __init__(self, input_size=32, num_classes=10, c_in=3, n_cols=4, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0, doubling=False, consist_gdrop=False):
-        super().__init__()
+class FractalNet40(Encoder):
+    def __init__(self, input_size=32, dim_out=256, c_in=3, n_cols=4, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0, doubling=False, consist_gdrop=False):
+        super().__init__(dim_out=dim_out)
         self.B = len(channels)  # num of blocks
         self.p_dropouts = p_dropouts
         self.p_local_drop = p_local_drop
@@ -148,7 +149,7 @@ class FractalNet40(nn.Module):
             size //= 2
             total_layers += fb.max_depth
         self.flatten = nn.Flatten()
-        self.fc = nn.Linear(channels[-1] * size * size, num_classes)
+        self.fc = nn.Linear(channels[-1] * size * size, dim_out)
 
     def forward(self, x, deepest=False):
         for fb, pool in zip(self.blocks, self.pools):

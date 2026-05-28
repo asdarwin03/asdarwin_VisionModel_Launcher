@@ -1,13 +1,10 @@
 from torch import nn
 import torchvision.transforms as transforms
+from encoder import Encoder
 
-
-class AlexNet(nn.Module):
-    def __init__(self, num_classes=10, net_config=None):
-        super().__init__()
-        self.mode = "Supervised"
-        if net_config is not None:
-            self.mode = net_config['mode'] # Supervised or Self-Supervised
+class AlexNet(Encoder):
+    def __init__(self, dim_out=256):
+        super().__init__(dim_out=dim_out)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(3, 2)
         self.conv1 = nn.Conv2d(3, 96, 11, 4, 0)
@@ -24,7 +21,7 @@ class AlexNet(nn.Module):
         self.dropout = nn.Dropout(p=0.5)
         self.fc1 = nn.Linear(in_features=256 * 6 * 6, out_features=4096)
         self.fc2 = nn.Linear(in_features=4096, out_features=4096)
-        self.fc3 = nn.Linear(in_features=4096, out_features=num_classes)
+        self.fc3 = nn.Linear(in_features=4096, out_features=self.dim_out)
 
     def forward(self, x):
         x = self.pool(self.relu(self.bn1(self.conv1(x))))
@@ -32,10 +29,6 @@ class AlexNet(nn.Module):
         x = self.relu(self.bn3(self.conv3(x)))
         x = self.relu(self.bn4(self.conv4(x)))
         x = self.pool(self.relu(self.bn5(self.conv5(x))))
-
-        if self.mode == "Self-Supervised":
-            return x
-        
         x = self.flatten(x)
         x = self.relu(self.fc1(x))
         x = self.dropout(x)

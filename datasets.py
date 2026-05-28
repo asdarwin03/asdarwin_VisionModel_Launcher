@@ -8,10 +8,16 @@ class SimCLRTransform:
     def __call__(self, x):
         return [self.transform(x), self.transform(x)]
 
-def load_dataset(dataset_name, dst_path='./data', isTrain=False, img_size=(32, 32), isSimCLR=False):
+def load_dataset(dataset_name, dst_path='./data', isTrain=False, img_size=(32, 32), isSimCLR=False, eval=False):
     transform = []
     if isTrain:
-        if isSimCLR is False:
+        if eval is True:
+            transform = transforms.Compose([
+                transforms.Resize((img_size[0], img_size[1])),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ])
+        elif isSimCLR is False:
             transform = transforms.Compose([
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomResizedCrop((img_size[0], img_size[1])),

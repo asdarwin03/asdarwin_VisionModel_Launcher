@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+from encoder import Encoder
 
 class ResidualBlock(nn.Module):
     def __init__(self, inputs, outputs, stride=1, downsample=None):
@@ -22,9 +22,9 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class ResNet20(nn.Module):
-    def __init__(self, num_classes=10, net_config=None):
-        super().__init__()
+class ResNet20(Encoder):
+    def __init__(self, dim_out=256):
+        super().__init__(dim_out=dim_out)
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
@@ -65,7 +65,7 @@ class ResNet20(nn.Module):
         )
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(64, num_classes)
+        self.fc = nn.Linear(64, dim_out)
 
 
     def forward(self, x):

@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import torch
 import json
+import methods
 import models, datasets
 from torch.utils.data import DataLoader
 from torch import nn
@@ -91,29 +92,346 @@ def launch(args):
     log.print("Saved Model State to " + run_name + ".pth")
 
 def conf_launch(config):
-    run_mode = config['run_mode']
-    train_type = config['train_type']
+    method = config['method']
 
-    if run_mode == "TrainAndTest" and train_type == "Supervised":
-        launch_TrainAndTest_Supervised(config)
-    elif run_mode == "PreTrainAndFineTuneAndTest" and train_type == "Self-Supervised":
-        launch_PreTrainAndFineTuneAndTest_SelfSupervised(config)
-    elif run_mode == "SimCLR":
+    if method == "Supervised":
+        launch_Supervised(config)
+    elif method == "SimCLR":
         launch_SimCLR(config)
-
-def launch_TrainAndTest_Supervised(config):
-    run_name = config['run_name']
-    run_mode = config['run_mode']
-    model_name = config['model']
-    train_type = config['train_type']
-
-    if run_mode != "TrainAndTest" or train_type != "Supervised":
+    elif method == "RotNet":
+        launch_RotNet(config)
+    elif method == "MoCo":
+        launch_MoCo(config)
+    else:
+        print(f"method {method}is not specified.")
         exit(0)
 
-    # TrainAndTest / Supervised
+def launch_Supervised(config):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model_name = config['model']
+    method_name = config['method']
+    run_name = config.get('run_name')
+    if run_name is None:
+        run_name = f"{method_name}_{model_name}_{config['train_dataset_name']}_{time.strftime('%Y%m%d-%H%M%S')}"
+    model_class = getattr(models, model_name)
+    method_class = getattr(methods, method_name)
+
+    # train dataset
+    batch_size = config['train']['batch_size']
+    train_dataset_name = config['train_dataset_name']
+    train_dataset_path = config['train_dataset_path'] or None
+    trainset, train_num_classes = datasets.load_dataset(dataset_name=train_dataset_name, dst_path=train_dataset_path,
+                                                        isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
+    trainloader = DataLoader(dataset=trainset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    # test dataset
+    test_dataset_name = config['test_dataset_name']
+    test_dataset_path = config['test_dataset_path'] or None
+    testset, test_num_classes = datasets.load_dataset(dataset_name=test_dataset_name, dst_path=test_dataset_path,
+                                                      isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
+    testloader = DataLoader(dataset=testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    # model / method
+    model = model_class(dim_out=config['encoder_dim_out'])
+    method = method_class(encoder=model, num_classes=train_num_classes)
+
+    # log setup
+    logdir = config['log_save_path']
+    logdir = os.path.join(logdir, f"{method_name}_{model_name}_{time.strftime('%Y%m%d-%H%M%S')}")
+    log = logger.Logger(logdir)
+    writer = log.writer
+    log.print(device)
+    log.print(config)
+    log.print("tensorboard name: " + f"{run_name}")
+    log.print(method)
+    log.print(f"total num of classes: {test_num_classes}")
+
+
+    method.to(device)
+    train_config = config['train']
+    optimizer, num_batches, num_epochs = None, None, None
+    # optimizer config
+    optimizer = optim.SGD(method.parameters(), lr=train_config['learning_rate'], weight_decay=train_config['weight_decay'], momentum=train_config['momentum'])
+
+    num_total_samples = len(trainloader.dataset)
+    num_batches = len(trainloader)
+    num_epochs = train_config['epochs']
+
+    # adaptive learning rate is automatically applied. (50%, 75%)
+    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
+                            gamma=0.1)
+    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
+
+    for epoch in range(num_epochs):
+        log.print(f"Epoch {epoch + 1}\n--------------------------")
+        train_loss = utils.train(dataloader=trainloader, method=method, optimizer=optimizer,
+                                            device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
+
+        log.print(
+            f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] Train Avg loss: {train_loss:>8f}")
+        test_loss = utils.test(dataloader=testloader, method=method, device=device,
+                                         cur_epoch=epoch, logger=log)
+        log.print(f"Test Result:\n Test Avg loss: {test_loss:>8f}\n")
+    
+    log.print("Train is now completed.")
+    os.makedirs(config['model_save_path'], exist_ok=True)
+    torch.save(method.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
+    writer.close()
+    log.print("Saved Model State to " + run_name + ".pth")
+
+
+
+
+
+
+def launch_SimCLR(config):
+    model_name = config['model']
+    method_name = config['method']
+    run_name = config.get('run_name')
+    if run_name is None:
+        run_name = f"{method_name}_{model_name}_{time.strftime('%Y%m%d-%H%M%S')}"
+    dim_out = config['encoder_dim_out']
+
+    # SimCLR / Self-Supervised
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     batch_size = config['train']['batch_size']
+
     model_class = getattr(models, model_name)
+    method_class = getattr(methods, method_name)
+
+    # train dataset
+    train_dataset_name = config['train_dataset_name']
+    train_dataset_path = config['train_dataset_path'] or None
+    trainset, train_num_classes = datasets.load_dataset(dataset_name=train_dataset_name, dst_path=train_dataset_path,
+                                                        isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]), isSimCLR=True)
+    trainloader = DataLoader(dataset=trainset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+    # test dataset
+    test_dataset_name = config['test_dataset_name']
+    test_dataset_path = config['test_dataset_path'] or None
+    testset, test_num_classes = datasets.load_dataset(dataset_name=test_dataset_name, dst_path=test_dataset_path,
+                                                      isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
+    testloader = DataLoader(dataset=testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    # knn evaluation dataset for SimCLR
+    if config.get('evaluation') == "kNN":
+        # training dataset for kNN evaluation
+        batch_size = config['train']['batch_size']
+        knn_train_dataset_name = config['train_dataset_name']
+        knn_train_dataset_path = config['train_dataset_path'] or None
+        knn_trainset, knn_train_num_classes = datasets.load_dataset(dataset_name=knn_train_dataset_name, dst_path=knn_train_dataset_path,
+                                                            isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]), eval=True)
+        knn_trainloader = DataLoader(dataset=knn_trainset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+        # test dataset for kNN evaluation
+        knn_test_dataset_name = config['test_dataset_name']
+        knn_test_dataset_path = config['test_dataset_path'] or None
+        knn_testset, knn_test_num_classes = datasets.load_dataset(dataset_name=knn_test_dataset_name, dst_path=knn_test_dataset_path,
+                                                                  isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
+        knn_testloader = DataLoader(dataset=knn_testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+
+    model = model_class(dim_out=dim_out)
+    method = method_class(encoder=model, z_dim=config.get('z_dim', 128), temperature=config['train'].get('temperature', 0.5))
+
+    # logging setup
+    logdir = config['log_save_path']
+    logdir = os.path.join(logdir, f"{run_name}_{time.strftime('%Y%m%d-%H%M%S')}")
+
+    log = logger.Logger(logdir)
+    writer = log.writer
+
+    log.print(device)
+    log.print(config)
+    log.print("tensorboard name: " + f"{run_name}")
+    log.print(method)
+    log.print(f"total num of classes: {test_num_classes}")
+
+    method.to(device)
+
+
+    train_config = config['train']
+    # loss function config
+    optimizer, num_batches, num_epochs = None, None, None
+
+    # optimizer config
+    opt = "SGD"
+    init_learning_rate = train_config['learning_rate']
+    weight_decay = train_config['weight_decay']
+    momentum = train_config['momentum']
+    optimizer = optim.SGD(method.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
+
+    num_batches = len(trainloader)
+    num_epochs = train_config['epochs']
+
+    # adaptive learning rate is automatically applied. (50%, 75%)
+    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
+                            gamma=0.1)
+    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
+
+    for epoch in range(num_epochs):
+        log.print(f"Epoch {epoch + 1}\n--------------------------")
+        train_loss = utils.SimCLR_train(dataloader=trainloader, method=method, optimizer=optimizer,
+                                            device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
+        log.print(
+            f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] train Avg loss: {train_loss:>8f}")
+        
+        if config.get('evaluation') == "kNN":
+            k = config.get('evaluation_config', {}).get('k', 5)
+            # kNN evaluation
+            test_acc = utils.knn_evaluate(
+                encoder=method.encoder,
+                train_loader=knn_trainloader,
+                test_loader=knn_testloader,
+                device=device,
+                cur_epoch=epoch,
+                k=k,
+                num_classes=knn_test_num_classes,
+                logger=log
+            )
+            log.print(f"Test Result:\nTest Accuracy(kNN evaluation): {(100 * test_acc):>0.1f}%\n")
+        
+        
+    log.print("Train is now completed.")
+
+    
+    os.makedirs(config['model_save_path'], exist_ok=True)
+    torch.save(method.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
+    writer.close()
+    log.print("Saved Model State to " + run_name + ".pth")
+
+
+def launch_MoCo(config):
+    model_name = config['model']
+    method_name = config['method']
+    run_name = config.get('run_name')
+    if run_name is None:
+        run_name = f"{method_name}_{model_name}_{time.strftime('%Y%m%d-%H%M%S')}"
+    dim_out = config['encoder_dim_out']
+
+    # MoCo / Self-Supervised
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    batch_size = config['train']['batch_size']
+
+    model_class = getattr(models, model_name)
+    method_class = getattr(methods, method_name)
+
+    # train dataset
+    train_dataset_name = config['train_dataset_name']
+    train_dataset_path = config['train_dataset_path'] or None
+    trainset, train_num_classes = datasets.load_dataset(dataset_name=train_dataset_name, dst_path=train_dataset_path,
+                                                        isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]), isSimCLR=True)
+    trainloader = DataLoader(dataset=trainset, batch_size=batch_size, shuffle=True, num_workers=0, drop_last=True) # drop_last to make sure batch size is consistent for MoCo
+
+    # test dataset
+    test_dataset_name = config['test_dataset_name']
+    test_dataset_path = config['test_dataset_path'] or None
+    testset, test_num_classes = datasets.load_dataset(dataset_name=test_dataset_name, dst_path=test_dataset_path,
+                                                      isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
+    testloader = DataLoader(dataset=testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    # knn evaluation dataset for SimCLR
+    if config.get('evaluation') == "kNN":
+        # training dataset for kNN evaluation
+        batch_size = config['train']['batch_size']
+        knn_train_dataset_name = config['train_dataset_name']
+        knn_train_dataset_path = config['train_dataset_path'] or None
+        knn_trainset, knn_train_num_classes = datasets.load_dataset(dataset_name=knn_train_dataset_name, dst_path=knn_train_dataset_path,
+                                                            isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]), eval=True)
+        knn_trainloader = DataLoader(dataset=knn_trainset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+        # test dataset for kNN evaluation
+        knn_test_dataset_name = config['test_dataset_name']
+        knn_test_dataset_path = config['test_dataset_path'] or None
+        knn_testset, knn_test_num_classes = datasets.load_dataset(dataset_name=knn_test_dataset_name, dst_path=knn_test_dataset_path,
+                                                                  isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
+        knn_testloader = DataLoader(dataset=knn_testset, batch_size=batch_size, shuffle=False, num_workers=0)
+
+
+    model = model_class(dim_out=dim_out)
+    method = method_class(encoder=model, queue_size=config['train'].get('queue_size', 4096), temperature=config['train'].get('temperature', 0.5), momentum=config['train'].get('moco_momentum', 0.999))
+
+    # logging setup
+    logdir = config['log_save_path']
+    logdir = os.path.join(logdir, f"{run_name}_{time.strftime('%Y%m%d-%H%M%S')}")
+
+    log = logger.Logger(logdir)
+    writer = log.writer
+
+    log.print(device)
+    log.print(config)
+    log.print("tensorboard name: " + f"{run_name}")
+    log.print(method)
+    log.print(f"total num of classes: {test_num_classes}")
+
+    method.to(device)
+
+
+    train_config = config['train']
+    # loss function config
+    optimizer, num_batches, num_epochs = None, None, None
+
+    # optimizer config
+    opt = "SGD"
+    init_learning_rate = train_config['learning_rate']
+    weight_decay = train_config['weight_decay']
+    momentum = train_config['momentum']
+    optimizer = optim.SGD(method.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
+
+    num_batches = len(trainloader)
+    num_epochs = train_config['epochs']
+
+    # adaptive learning rate is automatically applied. (50%, 75%)
+    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
+                            gamma=0.1)
+    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
+
+    for epoch in range(num_epochs):
+        log.print(f"Epoch {epoch + 1}\n--------------------------")
+        train_loss = utils.MoCo_train(dataloader=trainloader, method=method, optimizer=optimizer,
+                                            device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
+        log.print(
+            f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] train Avg loss: {train_loss:>8f}")
+        
+        if config.get('evaluation') == "kNN":
+            k = config.get('evaluation_config', {}).get('k', 5)
+            # kNN evaluation
+            test_acc = utils.knn_evaluate(
+                encoder=method.encoder,
+                train_loader=knn_trainloader,
+                test_loader=knn_testloader,
+                device=device,
+                cur_epoch=epoch,
+                k=k,
+                num_classes=knn_test_num_classes,
+                logger=log
+            )
+            log.print(f"Test Result:\nTest Accuracy(kNN evaluation): {(100 * test_acc):>0.1f}%\n")
+        
+        
+    log.print("Train is now completed.")
+
+    
+    os.makedirs(config['model_save_path'], exist_ok=True)
+    torch.save(method.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
+    writer.close()
+    log.print("Saved Model State to " + run_name + ".pth")
+
+
+def launch_RotNet(config):
+    model_name = config['model']
+    method_name = config['method']
+    run_name = config.get('run_name')
+    if run_name is None:
+        run_name = f"{method_name}_{model_name}_{time.strftime('%Y%m%d-%H%M%S')}"
+    dim_out = config['encoder_dim_out']
+
+    # RotNet / Self-Supervised
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    batch_size = config['train']['batch_size']
+
+    model_class = getattr(models, model_name)
+    method_class = getattr(methods, method_name)
 
     # train dataset
     train_dataset_name = config['train_dataset_name']
@@ -129,116 +447,8 @@ def launch_TrainAndTest_Supervised(config):
                                                       isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
     testloader = DataLoader(dataset=testset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    # model (config)
-    model = model_class(num_classes=train_num_classes, net_config=config['train']['net_config'])
-
-
-    logdir = config['log_save_path']
-    logdir = os.path.join(logdir, f"{run_name}_{time.strftime('%Y%m%d-%H%M%S')}")
-
-    log = logger.Logger(logdir)
-    writer = log.writer
-
-    log.print(device)
-    log.print(config)
-    log.print("tensorboard name: " + f"{run_name}")
-    log.print(model)
-    log.print(f"total num of classes: {test_num_classes}")
-
-    model.to(device)
-
-    train_config = config['train']
-
-    # loss function config
-    loss_func = train_config['loss_function']
-    loss_fn, optimizer, num_batches, num_epochs = None, None, None, None
-    if loss_func == "CrossEntropyLoss":
-        loss_fn = nn.CrossEntropyLoss()
-    elif loss_func == "L1Loss":
-        loss_fn = nn.L1Loss()
-    elif loss_func == "MSELoss":
-        loss_fn = nn.MSELoss()
-
-    # optimizer config
-    opt = train_config['optimizer']
-    if opt == "SGD":
-        init_learning_rate = train_config['learning_rate']
-        weight_decay = train_config['weight_decay']
-        momentum = train_config['momentum']
-        optimizer = optim.SGD(model.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
-    elif opt == "Adam":
-        init_learning_rate = train_config['learning_rate']
-        optimizer = optim.Adam(model.parameters(), lr=init_learning_rate)
-
-    num_total_samples = len(trainloader.dataset)
-    num_batches = len(trainloader)
-    num_epochs = train_config['epochs']
-
-    # adaptive learning rate is automatically applied. (50%, 75%)
-    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
-                            gamma=0.1)
-    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
-
-    for epoch in range(num_epochs):
-        log.print(f"Epoch {epoch + 1}\n--------------------------")
-        train_acc, train_loss = utils.train(dataloader=trainloader, model=model, loss_fn=loss_fn, optimizer=optimizer,
-                                            device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
-
-        log.print(
-            f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] Train Accuracy: {(100 * train_acc):>0.1f}%, Train Avg loss: {train_loss:>8f}")
-        test_acc, test_loss = utils.test(dataloader=testloader, model=model, loss_fn=loss_fn, device=device,
-                                         cur_epoch=epoch, logger=log)
-        log.print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%, Test Avg loss: {test_loss:>8f}\n")
-    log.print("Train is now completed.")
-    torch.save(model.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
-    writer.close()
-    log.print("Saved Model State to " + run_name + ".pth")
-
-
-
-def launch_PreTrainAndFineTuneAndTest_SelfSupervised(config):
-    run_name = config['run_name']
-    run_mode = config['run_mode']
-    model_name = config['model']
-    train_type = config['train_type']
-
-    if run_mode != "PreTrainAndFineTuneAndTest" or train_type != "Self-Supervised":
-        exit(0)
-
-    # PreTrainAndFineTuneAndTest / Self-Supervised
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    batch_size = config['pretrain']['batch_size']
-    model_class = getattr(models, model_name)
-
-    # pretrain dataset
-    pretrain_dataset_name = config['pretrain_dataset_name']
-    pretrain_dataset_path = config['pretrain_dataset_path'] or None
-    pretrainset, pretrain_num_classes = datasets.load_dataset(dataset_name=pretrain_dataset_name, dst_path=pretrain_dataset_path,
-                                                        isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
-    pretrainloader = DataLoader(dataset=pretrainset, batch_size=batch_size, shuffle=True, num_workers=0)
-
-    # finetune dataset
-    finetune_dataset_name = config['finetune_dataset_name']
-    finetune_dataset_path = config['finetune_dataset_path'] or None
-    finetuneset, finetune_num_classes = datasets.load_dataset(dataset_name=finetune_dataset_name, dst_path=finetune_dataset_path,
-                                                        isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
-    finetuneloader = DataLoader(dataset=finetuneset, batch_size=batch_size, shuffle=True, num_workers=0)
-
-    # test dataset
-    test_dataset_name = config['test_dataset_name']
-    test_dataset_path = config['test_dataset_path'] or None
-    testset, test_num_classes = datasets.load_dataset(dataset_name=test_dataset_name, dst_path=test_dataset_path,
-                                                      isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
-    testloader = DataLoader(dataset=testset, batch_size=batch_size, shuffle=False, num_workers=0)
-
-    # model (config)
-    encoder_model = config['pretrain']['net_config']['encoder_model']
-    if encoder_model == "AlexNet":
-        encoder_class = getattr(models, encoder_model)
-        encoder = encoder_class(num_classes=pretrain_num_classes, net_config=config['pretrain']['net_config']['encoder_config'])
-    else:
-        exit(0)
-    model = model_class(net_config=config['pretrain']['net_config'], encoder=encoder)
+    model = model_class(dim_out=dim_out)
+    method = method_class(encoder=model)
 
     # logging setup
     logdir = config['log_save_path']
@@ -250,186 +460,23 @@ def launch_PreTrainAndFineTuneAndTest_SelfSupervised(config):
     log.print(device)
     log.print(config)
     log.print("tensorboard name: " + f"{run_name}")
-    log.print(model)
+    log.print(method)
     log.print(f"total num of classes: {test_num_classes}")
 
-    model.to(device)
-
-
-    train_config = config['pretrain']
-    # loss function config
-    loss_func = train_config['loss_function']
-    loss_fn, optimizer, num_batches, num_epochs = None, None, None, None
-    if loss_func == "CrossEntropyLoss":
-        loss_fn = nn.CrossEntropyLoss()
-    elif loss_func == "L1Loss":
-        loss_fn = nn.L1Loss()
-    elif loss_func == "MSELoss":
-        loss_fn = nn.MSELoss()
-
-    # optimizer config
-    opt = train_config['optimizer']
-    if opt == "SGD":
-        init_learning_rate = train_config['learning_rate']
-        weight_decay = train_config['weight_decay']
-        momentum = train_config['momentum']
-        optimizer = optim.SGD(model.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
-    elif opt == "Adam":
-        init_learning_rate = train_config['learning_rate']
-        optimizer = optim.Adam(model.parameters(), lr=init_learning_rate)
-
-    num_total_samples = len(pretrainloader.dataset)
-    num_batches = len(pretrainloader)
-    num_epochs = train_config['epochs']
-
-    # adaptive learning rate is automatically applied. (50%, 75%)
-    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
-                            gamma=0.1)
-    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
-
-    for epoch in range(num_epochs):
-        log.print(f"Epoch {epoch + 1}\n--------------------------")
-        train_acc, train_loss = utils.pretrain(dataloader=pretrainloader, model=model, loss_fn=loss_fn, optimizer=optimizer,
-                                            device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
-
-        log.print(
-            f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] Pretrain Accuracy: {(100 * train_acc):>0.1f}%, Pretrain Avg loss: {train_loss:>8f}")
-        #test_acc, test_loss = utils.test(dataloader=testloader, model=model, loss_fn=loss_fn, device=device,
-        #                                 cur_epoch=epoch, logger=log)
-        #log.print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%, Test Avg loss: {test_loss:>8f}\n")
-    log.print("PreTrain is now completed.")
-
-    # now finetune and test
-    # ...
-
-    model.setmode("finetune")
-    train_config = config['finetune']
-    # loss function config
-    loss_func = train_config['loss_function']
-    loss_fn, optimizer, num_batches, num_epochs = None, None, None, None
-    if loss_func == "CrossEntropyLoss":
-        loss_fn = nn.CrossEntropyLoss()
-    elif loss_func == "L1Loss":
-        loss_fn = nn.L1Loss()
-    elif loss_func == "MSELoss":
-        loss_fn = nn.MSELoss()
-
-    # optimizer config
-    opt = train_config['optimizer']
-    if opt == "SGD":
-        init_learning_rate = train_config['learning_rate']
-        weight_decay = train_config['weight_decay']
-        momentum = train_config['momentum']
-        optimizer = optim.SGD(model.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
-    elif opt == "Adam":
-        init_learning_rate = train_config['learning_rate']
-        optimizer = optim.Adam(model.parameters(), lr=init_learning_rate)
-
-    num_total_samples = len(finetuneloader.dataset)
-    num_batches = len(finetuneloader)
-    num_epochs = train_config['epochs']
-
-    # adaptive learning rate is automatically applied. (50%, 75%)
-    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
-                            gamma=0.1)
-    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
-
-    for epoch in range(num_epochs):
-        log.print(f"Epoch {epoch + 1}\n--------------------------")
-        train_acc, train_loss = utils.train(dataloader=finetuneloader, model=model, loss_fn=loss_fn, optimizer=optimizer,
-                                            device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
-
-        log.print(
-            f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] Finetune Accuracy: {(100 * train_acc):>0.1f}%, Finetune Avg loss: {train_loss:>8f}")
-        test_acc, test_loss = utils.test(dataloader=testloader, model=model, loss_fn=loss_fn, device=device,
-                                         cur_epoch=epoch, logger=log)
-        log.print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%, Test Avg loss: {test_loss:>8f}\n")
-    log.print("Finetune is now completed.")
-
-
-    torch.save(model.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
-    writer.close()
-    log.print("Saved Model State to " + run_name + ".pth")
-
-
-def launch_SimCLR(config):
-    run_name = config['run_name']
-    run_mode = config['run_mode']
-    model_name = config['model']
-    train_type = config['train_type']
-
-    if run_mode != "SimCLR":
-        exit(0)
-
-    # SimCLR / Self-Supervised
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    batch_size = config['train']['batch_size']
-    model_class = getattr(models, model_name)
-
-    # pretrain dataset
-    train_dataset_name = config['train_dataset_name']
-    train_dataset_path = config['train_dataset_path'] or None
-    trainset, train_num_classes = datasets.load_dataset(dataset_name=train_dataset_name, dst_path=train_dataset_path,
-                                                        isTrain=True, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]), isSimCLR=True)
-    trainloader = DataLoader(dataset=trainset, batch_size=batch_size, shuffle=True, num_workers=0)
-
-    # test dataset
-    test_dataset_name = config['test_dataset_name']
-    test_dataset_path = config['test_dataset_path'] or None
-    testset, test_num_classes = datasets.load_dataset(dataset_name=test_dataset_name, dst_path=test_dataset_path,
-                                                      isTrain=False, img_size=(IMG_SIZE[model_name], IMG_SIZE[model_name]))
-    testloader = DataLoader(dataset=testset, batch_size=batch_size, shuffle=False, num_workers=0)
-
-    # model (config)
-    encoder_model = config['train']['net_config']['encoder_model']
-    if encoder_model == "AlexNet" or encoder_model == "ResNet20":
-        encoder_class = getattr(models, encoder_model)
-        encoder = encoder_class(num_classes=config['train']['net_config']['encoder_config']['num_classes'], net_config=config['train']['net_config']['encoder_config'])
-    else:
-        exit(0)
-    model = model_class(net_config=config['train']['net_config'], encoder=encoder, feature_dim=config['train']['net_config']['feature_dim'])
-
-    # logging setup
-    logdir = config['log_save_path']
-    logdir = os.path.join(logdir, f"{run_name}_{time.strftime('%Y%m%d-%H%M%S')}")
-
-    log = logger.Logger(logdir)
-    writer = log.writer
-
-    log.print(device)
-    log.print(config)
-    log.print("tensorboard name: " + f"{run_name}")
-    log.print(model)
-    log.print(f"total num of classes: {test_num_classes}")
-
-    model.to(device)
+    method.to(device)
 
 
     train_config = config['train']
     # loss function config
-    loss_func = train_config['loss_function']
-    loss_fn, optimizer, num_batches, num_epochs = None, None, None, None
-    if loss_func == "CrossEntropyLoss":
-        loss_fn = nn.CrossEntropyLoss()
-    elif loss_func == "L1Loss":
-        loss_fn = nn.L1Loss()
-    elif loss_func == "MSELoss":
-        loss_fn = nn.MSELoss()
-    elif loss_func == "NT-XentLoss":
-        loss_fn = utils.NTXentLoss(temperature=0.5)
+    optimizer, num_batches, num_epochs = None, None, None
 
     # optimizer config
-    opt = train_config['optimizer']
-    if opt == "SGD":
-        init_learning_rate = train_config['learning_rate']
-        weight_decay = train_config['weight_decay']
-        momentum = train_config['momentum']
-        optimizer = optim.SGD(model.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
-    elif opt == "Adam":
-        init_learning_rate = train_config['learning_rate']
-        optimizer = optim.Adam(model.parameters(), lr=init_learning_rate)
+    opt = "SGD"
+    init_learning_rate = train_config['learning_rate']
+    weight_decay = train_config['weight_decay']
+    momentum = train_config['momentum']
+    optimizer = optim.SGD(method.parameters(), lr=init_learning_rate, weight_decay=weight_decay, momentum=momentum)
 
-    num_total_samples = len(trainloader.dataset)
     num_batches = len(trainloader)
     num_epochs = train_config['epochs']
 
@@ -440,30 +487,36 @@ def launch_SimCLR(config):
 
     for epoch in range(num_epochs):
         log.print(f"Epoch {epoch + 1}\n--------------------------")
-        train_loss = utils.SimCLR_train(dataloader=trainloader, model=model, loss_fn=loss_fn, optimizer=optimizer,
+        train_loss = utils.RotNet_train(dataloader=trainloader, method=method, optimizer=optimizer,
                                             device=device, scheduler=scheduler, cur_epoch=epoch, logger=log)
 
         log.print(
             f"[epoch: {epoch + 1:>3d}/{num_epochs:>3d}] train Avg loss: {train_loss:>8f}")
+        
+        # kNN evaluation
+        if config.get('evaluation') == "kNN":
+            k = config.get('evaluation_config', {}).get('k', 5)
+            test_acc = utils.knn_evaluate(
+                encoder=method.encoder,
+                train_loader=trainloader,
+                test_loader=testloader,
+                device=device,
+                cur_epoch=epoch,
+                k=k,
+                num_classes=test_num_classes,
+                logger=log
+            )
+            log.print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%\n")
+
     log.print("Train is now completed.")
-
-    # now evaluation
-    # ...
-
-    num_total_samples = len(testloader.dataset)
-    num_batches = len(testloader)
-
-    # adaptive learning rate is automatically applied. (50%, 75%)
-    scheduler = MultiStepLR(optimizer, milestones=[num_batches * num_epochs * 2 / 4, num_batches * num_epochs * 3 / 4],
-                            gamma=0.1)
-    log.print(f"learning rate becomes gamma*lr when current epoch is {num_epochs * 2 / 4}, {num_epochs * 3 / 4}")
-
-    test_acc = utils.knn_evaluate(encoder=model.encoder, train_loader=trainloader, test_loader=testloader, device=device, k=5, num_classes=test_num_classes)
-    log.print(f"Test Result:\nTest Accuracy: {(100 * test_acc):>0.1f}%\n")
-
-    torch.save(model.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
+    
+    os.makedirs(config['model_save_path'], exist_ok=True)
+    torch.save(method.state_dict(), os.path.join(config['model_save_path'], run_name + ".pth"))
     writer.close()
     log.print("Saved Model State to " + run_name + ".pth")
+
+
+
 
 
 if __name__ == "__main__":

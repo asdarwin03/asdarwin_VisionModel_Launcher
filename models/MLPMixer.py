@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+from encoder import Encoder
 
 class MLPBlock(nn.Module):
     def __init__(self, d_in, hidden_d):
@@ -47,9 +47,9 @@ class MixerLayer(nn.Module):
         return x
 
 
-class MLPMixer(nn.Module):
-    def __init__(self, num_classes=10, img_size=(224, 224), num_mixerlayers=8, patch_size=16, C=512, c_in=3):
-        super().__init__()
+class MLPMixer(Encoder):
+    def __init__(self, dim_out=256, img_size=(224, 224), num_mixerlayers=8, patch_size=16, C=512, c_in=3):
+        super().__init__(dim_out=dim_out)
         self.num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)
         self.P = patch_size  # patch resolution
         self.N = num_mixerlayers  # number of layers
@@ -61,7 +61,7 @@ class MLPMixer(nn.Module):
         ])
 
         self.ln = nn.LayerNorm(self.C)
-        self.fc = nn.Linear(self.C, num_classes)
+        self.fc = nn.Linear(self.C, dim_out)
 
     def forward(self, x: torch.Tensor):
         # x : (B, C, H, W)
@@ -76,5 +76,5 @@ class MLPMixer(nn.Module):
             x = mixerlayer(x)  # -> (B, num_patches, channels(C))
         x = self.ln(x)  # -> (B, num_patches, LayerNormed_channels)
         x = x.mean(dim=1)  # -> (B, channels(C))
-        x = self.fc(x)  # -> (B, num_classes)
+        x = self.fc(x)  # -> (B, dim_out)
         return x

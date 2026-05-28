@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-
+from encoder import Encoder
 # recursive architecture, global droppath + local droppath + dropout
 
 
@@ -68,16 +68,9 @@ class FractalBlock(nn.Module):  # x -> [y1, y2, ...]
         return ys
 
 
-class FractalNet(nn.Module):
-    def __init__(self, input_size=32, net_config=None, num_classes=10, c_in=3, n_cols=4, num_blocks=5, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0):
-        super().__init__()
-        if net_config is not None:
-            n_cols = net_config['columns']
-            channels = net_config['channels']
-            p_dropouts = net_config['p_dropouts']
-            p_local_drop = net_config['p_local_drop']
-            p_global_drop = net_config['p_global_drop']
-            num_blocks = net_config['num_blocks']
+class FractalNet(Encoder):
+    def __init__(self, input_size=32, dim_out=256, c_in=3, n_cols=4, num_blocks=5, channels=[64, 128, 256, 512, 512], p_dropouts=[0, 0.1, 0.2, 0.3, 0.4], p_local_drop=0.15, p_global_drop=0):
+        super().__init__(dim_out=dim_out)
 
         self.blocks = nn.ModuleList()
         self.pools = nn.ModuleList()
@@ -97,7 +90,7 @@ class FractalNet(nn.Module):
             self.pools.append(nn.MaxPool2d(2))
             size //= 2
         self.flatten = nn.Flatten()
-        self.fc = nn.Linear(channels[-1] * size * size, num_classes)
+        self.fc = nn.Linear(channels[-1] * size * size, dim_out)
 
     def forward(self, x):
         if np.random.rand() < self.p_global_drop:

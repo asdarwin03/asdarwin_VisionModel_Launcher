@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from encoder import Encoder
 
 # n = 18 -> (108 + 2 layers)
 class PreActBasicBlock(nn.Module):
@@ -21,9 +22,9 @@ class PreActBasicBlock(nn.Module):
         return out
 
 
-class PreActResNet110(nn.Module):
-    def __init__(self, num_classes=10):
-        super().__init__()
+class PreActResNet110(Encoder):
+    def __init__(self, dim_out=256):
+        super().__init__(dim_out=dim_out)
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False)
         self.layer12_downsample = nn.Sequential(nn.Conv2d(16, 32, kernel_size=1, stride=2, bias=False),) # nn.BatchNorm2d(32) 없앰
         self.layer23_downsample = nn.Sequential(nn.Conv2d(32, 64, kernel_size=1, stride=2, bias=False),) # nn.BatchNorm2d(64) 없앰
@@ -44,7 +45,7 @@ class PreActResNet110(nn.Module):
         self.layer2 = nn.Sequential(*self.layer2_list)
         self.layer3 = nn.Sequential(*self.layer3_list)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(64, num_classes)
+        self.fc = nn.Linear(64, dim_out)
 
 
     def forward(self, x):

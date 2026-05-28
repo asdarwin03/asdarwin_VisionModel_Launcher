@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+from encoder import Encoder
 
 class TransformerEncoder(nn.Module):
     def __init__(self, D=16*16*3, num_heads=12, dropout=0.0):  # embed_size : (P^2 dot C, P=16, C=3)
@@ -21,9 +21,9 @@ class TransformerEncoder(nn.Module):
         x = x + self.mlp(self.ln2(x))
         return x
 
-class VisionTransformer(nn.Module):
-    def __init__(self, num_classes=10, net_config=None, c_in=3, num_encoders=5, embed_size=16*16*3, img_size=[224, 224], patch_size=16, num_heads=4, p_dropout=0.0):
-        super().__init__()
+class VisionTransformer(Encoder):
+    def __init__(self, dim_out=256, net_config=None, c_in=3, num_encoders=5, embed_size=16*16*3, img_size=[224, 224], patch_size=16, num_heads=4, p_dropout=0.0):
+        super().__init__(dim_out=dim_out)
 
         if net_config is not None:
             num_encoders = net_config['num_encoders']
@@ -50,7 +50,7 @@ class VisionTransformer(nn.Module):
 
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(self.D),
-            nn.Linear(self.D, num_classes)
+            nn.Linear(self.D, dim_out)
         )
 
 

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-
+from encoder import Encoder
 
 class MixerLayer(nn.Module):
     def __init__(self, dim, kernel_size=9):
@@ -20,10 +20,9 @@ class MixerLayer(nn.Module):
         return x
 
 
-class ConvMixer(nn.Module):
-    def __init__(self, num_classes=10, c_in=3, dim=256, depth=12, patch_size=7, kernel_size=9):
-        super().__init__()
-
+class ConvMixer(Encoder):
+    def __init__(self, dim_out=256, c_in=3, dim=256, depth=12, patch_size=7, kernel_size=9):
+        super().__init__(dim_out=dim_out)
         self.conv = nn.Conv2d(in_channels=c_in, out_channels=dim, kernel_size=patch_size, stride=patch_size)
         self.gelu = nn.GELU()
         self.bn = nn.BatchNorm2d(dim)
@@ -32,9 +31,9 @@ class ConvMixer(nn.Module):
         ])
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.flatten = nn.Flatten()
-        self.fc = nn.Linear(in_features=dim, out_features=num_classes)
+        self.fc = nn.Linear(in_features=dim, out_features=dim_out)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x):
         # x : (B, C, H, W)
         x = self.bn(self.gelu(self.conv(x)))  # (B, D, H/P, W/P)
         for mixerlayer in self.mixerlayers:
